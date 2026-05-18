@@ -59,7 +59,14 @@ export interface Patient {
   blood_group: string | null
   phone: string
   email: string | null
+  address: string | null
+  emergency_contact: string | null
+  emergency_phone: string | null
+  allergies: string[] | null
   is_active: boolean
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
 }
 
 export interface Appointment {

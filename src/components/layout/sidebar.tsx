@@ -19,11 +19,10 @@ export function Sidebar({ user }: SidebarProps) {
   const navItems = getNavItemsForRole(user.role)
 
   async function handleSignOut() {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    router.push('/login')
-    router.refresh()
-  }
+  const supabase = createClient()
+  await supabase.auth.signOut()
+  window.location.href = '/login'
+}
 
   return (
     <aside className="fixed left-0 top-0 h-full w-64 bg-white border-r border-slate-200 flex flex-col z-30">

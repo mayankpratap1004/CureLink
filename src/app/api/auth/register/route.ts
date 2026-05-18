@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminClient } from '@/lib/supabase/admin'
+import { createClient } from '@supabase/supabase-js'
+import type { Database } from '@/types/database'
 import { z } from 'zod'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const supabaseAdmin = createClient<Database>(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+) as any
 
 const schema = z.object({
   hospital_name: z.string().min(3),
@@ -24,7 +32,7 @@ export async function POST(req: NextRequest) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        { error: parsed.error.errors[0].message },
+        { error: parsed.error.issues[0].message },
         { status: 400 }
       )
     }
@@ -34,31 +42,33 @@ export async function POST(req: NextRequest) {
     // 1. Create tenant
     const slug = slugify(hospital_name) + '-' + Date.now().toString(36)
 
-    const { data: tenant, error: tenantError } = await adminClient
+    const { data: tenant, error: tenantError } = await supabaseAdmin
       .from('tenants')
       .insert({ name: hospital_name, slug, plan: 'starter' })
       .select()
       .single()
 
-    if (tenantError) throw new Error(tenantError.message)
+    if (tenantError || !tenant) {
+      throw new Error(tenantError?.message ?? 'Failed to create tenant')
+    }
 
     // 2. Create auth user
-    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-    })
+    const { data: authData, error: authError } = await supabaseAdmin
+      .auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+      })
 
-    if (authError) {
-      // Rollback tenant
-      await adminClient.from('tenants').delete().eq('id', tenant.id)
-      throw new Error(authError.message)
+    if (authError || !authData.user) {
+      await supabaseAdmin.from('tenants').delete().eq('id', tenant.id)
+      throw new Error(authError?.message ?? 'Failed to create user')
     }
 
     const userId = authData.user.id
 
     // 3. Create user profile
-    const { error: userError } = await adminClient
+    const { error: userError } = await supabaseAdmin
       .from('users')
       .insert({
         id: userId,
@@ -70,8 +80,8 @@ export async function POST(req: NextRequest) {
 
     if (userError) throw new Error(userError.message)
 
-    // 4. Seed default roles for this tenant
-    const { data: roles, error: rolesError } = await adminClient
+    // 4. Seed default roles
+    const { data: roles, error: rolesError } = await supabaseAdmin
       .from('roles')
       .insert([
         { tenant_id: tenant.id, name: 'admin',        permissions: { all: true } },
@@ -81,12 +91,12 @@ export async function POST(req: NextRequest) {
       ])
       .select()
 
-    if (rolesError) throw new Error(rolesError.message)
+    if (rolesError || !roles) throw new Error(rolesError?.message ?? 'Failed to create roles')
 
-    // 5. Assign admin role to this user
-    const adminRole = roles.find(r => r.name === 'admin')
+    // 5. Assign admin role
+    const adminRole = (roles as { id: string; name: string }[]).find(r => r.name === 'admin')
     if (adminRole) {
-      await adminClient.from('user_roles').insert({
+      await supabaseAdmin.from('user_roles').insert({
         user_id: userId,
         role_id: adminRole.id,
         tenant_id: tenant.id,
@@ -94,20 +104,12 @@ export async function POST(req: NextRequest) {
     }
 
     // 6. Seed default departments
-    await adminClient.from('departments').insert([
+    await supabaseAdmin.from('departments').insert([
       { tenant_id: tenant.id, name: 'General Medicine', color: '#6366f1' },
       { tenant_id: tenant.id, name: 'Cardiology',       color: '#ef4444' },
       { tenant_id: tenant.id, name: 'Paediatrics',      color: '#f59e0b' },
       { tenant_id: tenant.id, name: 'Orthopaedics',     color: '#10b981' },
     ])
-
-    // 7. Sign in the user and return session
-    const { data: signInData, error: signInError } = await adminClient.auth.admin.generateLink({
-      type: 'magiclink',
-      email,
-    })
-
-    if (signInError) throw new Error(signInError.message)
 
     return NextResponse.json({ success: true, tenant_id: tenant.id })
 

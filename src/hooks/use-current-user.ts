@@ -4,6 +4,19 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { CurrentUser } from '@/types/app'
 
+interface UserProfile {
+  tenant_id: string
+  full_name: string
+  email: string
+  avatar_url: string | null
+  user_roles: {
+    roles: {
+      name: string
+      permissions: Record<string, boolean>
+    } | null
+  }[]
+}
+
 export function useCurrentUser() {
   const [user, setUser] = useState<CurrentUser | null>(null)
   const [loading, setLoading] = useState(true)
@@ -18,15 +31,16 @@ export function useCurrentUser() {
         return
       }
 
-      const { data: profile } = await supabase
+      const { data } = await supabase
         .from('users')
-        .select('*, user_roles(role_id, roles(name, permissions))')
+        .select('tenant_id, full_name, email, avatar_url, user_roles(roles(name, permissions))')
         .eq('id', authUser.id)
         .single()
 
+      const profile = data as unknown as UserProfile | null
+
       if (profile) {
-        const roleData = profile.user_roles?.[0]?.roles as
-          { name: string; permissions: Record<string, boolean> } | undefined
+        const roleData = profile.user_roles?.[0]?.roles
 
         setUser({
           id: authUser.id,
