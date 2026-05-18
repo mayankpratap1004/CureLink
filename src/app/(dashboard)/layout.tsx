@@ -3,31 +3,24 @@ import { getCurrentUser } from '@/services/auth.service'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Topbar } from '@/components/layout/topbar'
 
-export default async function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser()
+  if (!user) redirect('/login')
 
-  if (!user) {
-    redirect('/login')
-  }
-
-  // If user has no role yet, default to admin for the owner
-  const userWithRole = {
-    ...user,
-    role: user.role ?? 'admin' as const,
-  }
+  const userWithRole = { ...user, role: (user.role ?? 'admin') as typeof user.role }
 
   return (
     <div className="min-h-screen bg-slate-50">
       <Sidebar user={userWithRole} />
-      <div className="ml-64 flex flex-col min-h-screen">
-        <Topbar user={userWithRole} />
-        <main className="flex-1 p-6">
-          {children}
-        </main>
+
+      {/* Main content — offset by sidebar on desktop, top bar on mobile */}
+      <div className="lg:pl-60">
+        <div className="pt-14 lg:pt-0">
+          <Topbar user={userWithRole} />
+          <main className="p-4 sm:p-6 max-w-7xl mx-auto">
+            {children}
+          </main>
+        </div>
       </div>
     </div>
   )
